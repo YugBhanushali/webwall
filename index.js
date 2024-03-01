@@ -1,10 +1,5 @@
 #!/usr/bin/env node
 
-// const fs = require("fs");
-// const { program } = require("commander");
-// const inquirer = require("inquirer");
-// const ora = require("ora");
-// const { execSync } = require("child_process");
 import fs from "fs";
 import { program } from "commander";
 import inquirer from "inquirer";
@@ -13,15 +8,38 @@ import { execSync } from "child_process";
 
 const hostsPath = "/private/etc/hosts"; // Path to the hosts file, may vary based on OS
 
-function blockWebsites(urls) {
-  const rules = urls.map((url) => `127.0.0.1\t${url}`);
+// Default hosts file content
+const defaultHostsContent = `##
+# Host Database
+#
+# localhost is used to configure the loopback interface
+# when the system is booting.  Do not change this entry.
+##
+127.0.0.1	localhost
+255.255.255.255	broadcasthost
+::1             localhost
+`;
 
+function restoreDefaultHosts() {
+  fs.writeFileSync(hostsPath, defaultHostsContent);
+}
+
+function removeExtraNewLines() {
+  const hostsContent = fs.readFileSync(hostsPath, "utf-8");
+  const cleanedContent = hostsContent.replace(/\n{2,}/g, "\n");
+  fs.writeFileSync(hostsPath, cleanedContent);
+}
+
+function blockWebsites(urls) {
+  const rules = urls.map((url) => `127.0.0.1\t${url}\n`);
+  console.log(rules);
+  removeExtraNewLines();
   fs.appendFileSync(hostsPath, rules.join("\n"));
 }
 
 function unblockWebsite(url) {
   const hostsContent = fs.readFileSync(hostsPath, "utf-8");
-  const entry = `127.0.0.1\t${url}`;
+  const entry = `127.0.0.1\t${url}\n`;
 
   const updatedContent = hostsContent.replace(entry, "");
 
@@ -106,9 +124,19 @@ async function blockForDuration(duration, filePath) {
     return;
   }
 
+  // Register signal handler for SIGINT (Ctrl + C)
+  process.on("SIGINT", () => {
+    console.log("\nReceived SIGINT signal. Unblocking websites...");
+    modifyHosts("unblock", urls);
+    process.exit();
+  });
+
   modifyHosts("block", urls);
 
   await sleep(duration * 60 * 1000);
+
+  // If the blocking process completes successfully, unregister the signal handler
+  process.off("SIGINT");
 
   modifyHosts("unblock", urls);
 
@@ -121,6 +149,14 @@ program
   .description(
     "CLI tool to block and unblock websites by modifying the hosts file"
   );
+
+program
+  .command("default")
+  .description("Restore hosts file to default")
+  .action(() => {
+    restoreDefaultHosts();
+    console.log("Hosts file restored to default.");
+  });
 
 program
   .arguments("<duration> <filePath>")
