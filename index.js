@@ -3,25 +3,23 @@
 import fs from "fs";
 import { program } from "commander";
 import inquirer from "inquirer";
-import ora from "ora";
 import { execSync } from "child_process";
+import { Presets, SingleBar } from "cli-progress";
+import colours from "ansi-colors";
 
-const hostsPath = "/private/etc/hosts"; // Path to the hosts file, may vary based on OS
-
-// Default hosts file content
-const defaultHostsContent = `##
-# Host Database
-#
-# localhost is used to configure the loopback interface
-# when the system is booting.  Do not change this entry.
-##
-127.0.0.1	localhost
-255.255.255.255	broadcasthost
-::1             localhost
-`;
-
-function restoreDefaultHosts() {
-  fs.writeFileSync(hostsPath, defaultHostsContent);
+const hostsPath = getHostsPath();
+function getHostsPath() {
+  switch (os.platform()) {
+    case "darwin":
+      return "/private/etc/hosts";
+    case "linux":
+      return "/etc/hosts";
+    case "win32":
+      return "C:\\Windows\\System32\\drivers\\etc\\hosts";
+    default:
+      console.error("Unsupported platform");
+      process.exit(1);
+  }
 }
 
 function removeExtraNewLines() {
@@ -30,11 +28,54 @@ function removeExtraNewLines() {
   fs.writeFileSync(hostsPath, cleanedContent);
 }
 
+function getDuration(duration) {
+  const durationStr = String(duration);
+  const durationMatch = durationStr.match(/^(\d+)([mh])?$/i);
+  const value = parseInt(durationMatch[1]);
+  const unit = durationMatch[2] ? durationMatch[2].toLowerCase() : "m";
+
+  if (!durationMatch) {
+    console.error(
+      "Invalid duration format. Please use format like '2m' for 2 minutes or '3h' for 3 hours."
+    );
+    return;
+  }
+
+  let durationInMs;
+
+  if (unit === "m") {
+    durationInMs = value * 60 * 1000;
+  } else if (unit === "h") {
+    durationInMs = value * 60 * 60 * 1000;
+  }
+
+  if (!durationInMs || durationInMs <= 0) {
+    console.error(
+      "Invalid duration. Please provide a valid positive duration."
+    );
+    return;
+  }
+
+  if (durationInMs >= 0) {
+    return {
+      duration: durationInMs,
+      type: unit === "m" ? "minutes" : "hours",
+      originalTime: parseInt(durationMatch[1]),
+    };
+  }
+}
+
 function blockWebsites(urls) {
-  const rules = urls.map((url) => `127.0.0.1\t${url}\n`);
-  console.log(rules);
+  const existingUrls = getBlockedUrls();
+  const newUrls = urls.filter((url) => !existingUrls.includes(url));
+
+  if (newUrls.length === 0) {
+    return;
+  }
+
+  const rules = newUrls.map((url) => `127.0.0.1\t${url}\n`);
   removeExtraNewLines();
-  fs.appendFileSync(hostsPath, rules.join("\n"));
+  fs.appendFileSync(hostsPath, rules.join(""));
 }
 
 function unblockWebsite(url) {
@@ -59,6 +100,13 @@ function getBlockedUrls() {
   return blockedUrls;
 }
 
+function blockWebsiteWithouDuration(action, urls) {
+  urls.map((url) => {
+    console.log(`Website ${url} blocked`);
+  });
+  modifyHosts(action, urls);
+}
+
 function modifyHosts(action, urls) {
   // Check if the hosts file exists
   if (!fs.existsSync(hostsPath)) {
@@ -68,11 +116,10 @@ function modifyHosts(action, urls) {
 
   if (action === "block") {
     blockWebsites(urls);
-    console.log("\nWebsites blocked successfully.");
+    console.log("Websites blocked successfully.");
   } else if (action === "unblock") {
     urls.forEach((url) => {
       unblockWebsite(url);
-      console.log(`Website '${url}' unblocked successfully.`);
     });
   }
 
@@ -87,6 +134,10 @@ function modifyHosts(action, urls) {
 
 async function listAndUnblockBlockedUrls() {
   const blockedUrls = getBlockedUrls();
+
+  blockedUrls.map((url) => {
+    console.log(`Website '${url}' unblocked successfully.\n`);
+  });
 
   if (blockedUrls.length === 0) {
     console.log("No websites are currently blocked.");
@@ -105,16 +156,30 @@ async function listAndUnblockBlockedUrls() {
   modifyHosts("unblock", urlsToUnblock);
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function blockForDuration(duration, filePath) {
-  console.log(`Blocking websites for ${duration} minutes...`);
+  const durationType = getDuration(duration);
+  console.log(
+    `Blocking websites for ${durationType.originalTime} ${durationType.type}`
+  );
 
-  const spinner = ora("Blocking websites...").start();
+  const progressBar = new SingleBar(
+    {
+      format:
+        "Remaining time [" +
+        colours.cyan("{bar}") +
+        "] Progress: {value}/{total}",
+      barCompleteChar: "#",
+      barIncompleteChar: ".",
+      hideCursor: true,
+    },
+    Presets.shades_grey
+  );
 
-  // Read the list of URLs from the text file
+  console.log(
+    "\nYou can access your blocket website after the below progress gets complete"
+  );
+  progressBar.start(100, 0);
+
   let urls = [];
   try {
     const fileContent = fs.readFileSync(filePath, "utf-8");
@@ -124,24 +189,33 @@ async function blockForDuration(duration, filePath) {
     return;
   }
 
-  // Register signal handler for SIGINT (Ctrl + C)
+  blockWebsites(urls);
+
+  const interval = Math.floor(durationType.duration / 100);
+  let progress = 0;
+
+  const progressTimer = setInterval(() => {
+    progress++;
+    progressBar.update(progress);
+  }, interval);
+
+  // When user terminate program using ctrl+c
   process.on("SIGINT", () => {
-    console.log("\nReceived SIGINT signal. Unblocking websites...");
+    clearInterval(progressTimer);
+    progressBar.stop();
     modifyHosts("unblock", urls);
+    console.log(
+      "Program has been terminated. Blocked websites have been unblocked."
+    );
     process.exit();
   });
 
-  modifyHosts("block", urls);
-
-  await sleep(duration * 60 * 1000);
-
-  // If the blocking process completes successfully, unregister the signal handler
-  process.off("SIGINT");
-
-  modifyHosts("unblock", urls);
-
-  spinner.stop();
-  console.log("Websites unblocked.");
+  setTimeout(() => {
+    clearInterval(progressTimer);
+    progressBar.stop();
+    modifyHosts("unblock", urls);
+    console.log("Websites unblocked.");
+  }, durationType.duration);
 }
 
 program
@@ -151,20 +225,12 @@ program
   );
 
 program
-  .command("default")
-  .description("Restore hosts file to default")
-  .action(() => {
-    restoreDefaultHosts();
-    console.log("Hosts file restored to default.");
-  });
-
-program
   .arguments("<duration> <filePath>")
   .description(
     "Block websites for a specified duration using URLs from a text file"
   )
   .action((duration, filePath) => {
-    blockForDuration(parseInt(duration), filePath).catch((error) =>
+    blockForDuration(duration, filePath).catch((error) =>
       console.error("Error:", error.message)
     );
   });
@@ -173,7 +239,7 @@ program
   .command("block [urls...]")
   .description("Block one or more websites by name")
   .action((urls) => {
-    modifyHosts("block", urls);
+    blockWebsiteWithouDuration("block", urls);
   });
 
 program
