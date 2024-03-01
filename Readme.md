@@ -1,4 +1,3 @@
-````markdown
 # block-it
 
 block-it is a command-line tool designed to help you block and unblock websites by modifying the hosts file on your system. It provides a simple and efficient way to manage access to specific websites for a specified duration or indefinitely.
@@ -22,6 +21,7 @@ block-it is a command-line tool designed to help you block and unblock websites 
    ```sh
    git clone https://github.com/your-username/block-it.git
    ```
+
 ````
 
 2. Navigate to the cloned directory:
@@ -79,3 +79,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 Feel free to customize it further to fit your preferences or add any additional information you think would be helpful for users!
 ```
+
+````
