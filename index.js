@@ -6,6 +6,7 @@ import inquirer from "inquirer";
 import { execSync } from "child_process";
 import { Presets, SingleBar } from "cli-progress";
 import colours from "ansi-colors";
+import os from "os";
 
 const hostsPath = getHostsPath();
 function getHostsPath() {
