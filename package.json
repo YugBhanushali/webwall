@@ -1,5 +1,5 @@
 {
-  "name": "blockit",
+  "name": "web-block",
   "version": "1.0.0",
   "description": "A cli tool to block the websites to increase your productivity",
   "main": "index.js",
