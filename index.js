@@ -136,10 +136,6 @@ function modifyHosts(action, urls) {
 async function listAndUnblockBlockedUrls() {
   const blockedUrls = getBlockedUrls();
 
-  blockedUrls.map((url) => {
-    console.log(`Website '${url}' unblocked successfully.\n`);
-  });
-
   if (blockedUrls.length === 0) {
     console.log("No websites are currently blocked.");
     return;
@@ -153,6 +149,12 @@ async function listAndUnblockBlockedUrls() {
       choices: blockedUrls,
     },
   ]);
+
+  if (urlsToUnblock) {
+    urlsToUnblock.map((url) => {
+      console.log(`Website '${url}' unblocked successfully.\n`);
+    });
+  }
 
   modifyHosts("unblock", urlsToUnblock);
 }
